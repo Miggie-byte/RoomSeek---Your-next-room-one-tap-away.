@@ -18,6 +18,8 @@ def lambda_handler(event, context):
         s3.download_file(bucket, key, tmp.name)
         workbook = load_workbook(tmp.name)
 
+    all_rooms_data = {}
+
     for sheet_name in workbook.sheetnames:
         worksheet = workbook[sheet_name]
         room_number = str(worksheet['A6'].value)
@@ -27,6 +29,9 @@ def lambda_handler(event, context):
             vacant_start = None
             vacant_end = None
             header_value = worksheet[f'{get_column_letter(col)}7'].value
+            
+            if not header_value:
+                continue
 
             output[room_number][header_value] = []
 
@@ -61,5 +66,9 @@ def lambda_handler(event, context):
             'vacant_slots': output[room_number]
         })
         print(f"Stored {room_number} to DynamoDB")
+        all_rooms_data.update(output)
 
-    return {'statusCode': 200, 'body': 'Done'}
+    return {
+        'statusCode': 200, 
+        'body': json.dumps(all_rooms_data)
+    }

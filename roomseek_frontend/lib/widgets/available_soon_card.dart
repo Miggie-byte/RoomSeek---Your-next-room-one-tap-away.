@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/room.dart';
+import 'room_detail_modal.dart';
 
 class AvailableSoonCard extends StatelessWidget {
   final RoomSoon room;
+  final String? targetTime;
 
-  const AvailableSoonCard({super.key, required this.room});
+  const AvailableSoonCard({super.key, required this.room, this.targetTime});
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +61,7 @@ class AvailableSoonCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
-                      'SOON',
+                      'OCCUPIED',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
@@ -71,7 +73,7 @@ class AvailableSoonCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      _buildMetric(Icons.schedule_rounded, 'STARTS', room.at),
+                      _buildMetric(Icons.schedule_rounded, 'FREE AT', room.at),
                       const SizedBox(width: 20),
                       _buildMetric(Icons.hourglass_top_rounded, 'WAIT', room.vacantIn),
                     ],
@@ -79,10 +81,18 @@ class AvailableSoonCard extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.2),
-              size: 22,
+            IconButton(
+              onPressed: () => RoomDetailModal.show(
+                context,
+                roomNumber: room.room,
+                schedule: room.schedule,
+                targetTime: targetTime,
+              ),
+              icon: Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.2),
+                size: 26,
+              ),
             ),
           ],
         ),

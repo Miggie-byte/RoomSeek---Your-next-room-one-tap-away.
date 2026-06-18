@@ -22,6 +22,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final ScrollController _dayScrollController = ScrollController();
+  bool _showAllNow = false;
+  bool _showAllSoon = false;
 
   @override
   void initState() {
@@ -36,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _refreshData({String? day, String? time}) {
+  Future<void> _refreshData({String? day, String? time}) async {
     final now = DateTime.now();
     final currentDay = day ?? DateFormat('EEEE').format(now).toUpperCase();
     final currentTime = time ?? DateFormat('h:mm a').format(now);
@@ -46,7 +48,33 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedTime = currentTime;
       _roomAvailability = _apiService.fetchRooms(currentDay, currentTime);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
+
+    try {
+      await _roomAvailability;
+    } catch (e) {
+      // Error handled by FutureBuilder
+    }
+
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelectedDay());
+    }
+  }
+
+  Duration _parseDuration(String durationStr) {
+    int hours = 0;
+    int minutes = 0;
+
+    final hMatch = RegExp(r'(\d+)h').firstMatch(durationStr);
+    if (hMatch != null) {
+      hours = int.parse(hMatch.group(1)!);
+    }
+
+    final mMatch = RegExp(r'(\d+)m').firstMatch(durationStr);
+    if (mMatch != null) {
+      minutes = int.parse(mMatch.group(1)!);
+    }
+
+    return Duration(hours: hours, minutes: minutes);
   }
 
   @override
@@ -55,76 +83,158 @@ class _HomeScreenState extends State<HomeScreen> {
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F5F7),
-        body: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            _buildSliverHeader(context),
-            SliverToBoxAdapter(
-              child: FutureBuilder<RoomAvailability>(
-                future: _roomAvailability,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SizedBox(
-                      height: 300,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF1C1C1E),
-                          strokeWidth: 2,
+        body: RefreshIndicator(
+          onRefresh: () => _refreshData(),
+          color: const Color(0xFF1C1C1E),
+          backgroundColor: Colors.white,
+          edgeOffset: MediaQuery.of(context).padding.top + 20,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              _buildSliverHeader(context),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: _buildInfoChip(),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: FutureBuilder<RoomAvailability>(
+                  future: _roomAvailability,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox(
+                        height: 300,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF1C1C1E),
+                            strokeWidth: 2,
+                          ),
                         ),
-                      ),
-                    );
-                  }
+                      );
+                    }
 
-                  if (snapshot.hasError) {
-                    return _buildErrorState(snapshot.error.toString());
-                  }
+                    if (snapshot.hasError) {
+                      return _buildErrorState(snapshot.error.toString());
+                    }
 
-                  if (!snapshot.hasData ||
-                      (snapshot.data!.availableNow.isEmpty &&
-                          snapshot.data!.availableSoon.isEmpty)) {
-                    return _buildEmptyState();
-                  }
+                    if (!snapshot.hasData ||
+                        (snapshot.data!.availableNow.isEmpty &&
+                            snapshot.data!.availableSoon.isEmpty)) {
+                      return _buildEmptyState();
+                    }
 
-                  final data = snapshot.data!;
-                  final filteredNow = _searchQuery.isEmpty
-                      ? data.availableNow
-                      : data.availableNow
-                          .where((r) => r.room
-                              .toLowerCase()
-                              .contains(_searchQuery.toLowerCase()))
-                          .toList();
-                  final filteredSoon = _searchQuery.isEmpty
-                      ? data.availableSoon
-                      : data.availableSoon
-                          .where((r) => r.room
-                              .toLowerCase()
-                              .contains(_searchQuery.toLowerCase()))
-                          .toList();
+                    final data = snapshot.data!;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Column(
+                    // Sort and filter "Available Now" (Descending vacant time)
+                    final sortedNow = List<RoomNow>.from(data.availableNow)
+                      ..sort((a, b) => _parseDuration(b.vacantFor)
+                          .compareTo(_parseDuration(a.vacantFor)));
+
+                    final filteredNow = sortedNow
+                        .where((r) =>
+                            _searchQuery.isEmpty ||
+                            r.room
+                                .toLowerCase()
+                                .contains(_searchQuery.toLowerCase()))
+                        .toList();
+
+                    final displayNow = _showAllNow || filteredNow.length <= 3
+                        ? filteredNow
+                        : filteredNow.take(3).toList();
+
+                    // Sort and filter "Available Soon" (Ascending wait time)
+                    final sortedSoon = List<RoomSoon>.from(data.availableSoon)
+                      ..sort((a, b) => _parseDuration(a.vacantIn)
+                          .compareTo(_parseDuration(b.vacantIn)));
+
+                    final filteredSoon = sortedSoon
+                        .where((r) =>
+                            _searchQuery.isEmpty ||
+                            r.room
+                                .toLowerCase()
+                                .contains(_searchQuery.toLowerCase()))
+                        .toList();
+
+                    final displaySoon = _showAllSoon || filteredSoon.length <= 3
+                        ? filteredSoon
+                        : filteredSoon.take(3).toList();
+
+                    return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildInfoChip(),
-                        if (filteredNow.isNotEmpty) ...[
+                        if (displayNow.isNotEmpty) ...[
                           _buildSectionTitle('AVAILABLE NOW', filteredNow.length),
-                          ...filteredNow.map((room) => RoomCard(room: room)),
+                          ...displayNow.map((room) =>
+                              RoomCard(room: room, targetTime: _selectedTime)),
+                          if (filteredNow.length > 3)
+                            _buildSeeAllButton(
+                              _showAllNow,
+                              () => setState(() => _showAllNow = !_showAllNow),
+                            ),
                         ],
-                        if (filteredSoon.isNotEmpty) ...[
-                          _buildSectionTitle('UP NEXT', filteredSoon.length),
-                          ...filteredSoon.map((room) => AvailableSoonCard(room: room)),
+                        if (displaySoon.isNotEmpty) ...[
+                          _buildSectionTitle(
+                              'AVAILABLE SOON', filteredSoon.length),
+                          ...displaySoon.map((room) => AvailableSoonCard(
+                              room: room, targetTime: _selectedTime)),
+                          if (filteredSoon.length > 3)
+                            _buildSeeAllButton(
+                              _showAllSoon,
+                              () => setState(() => _showAllSoon = !_showAllSoon),
+                            ),
                         ],
-                        if (filteredNow.isEmpty && filteredSoon.isEmpty)
+                        if (displayNow.isEmpty && displaySoon.isEmpty)
                           _buildEmptyState(),
                         const SizedBox(height: 120),
                       ],
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeeAllButton(bool isExpanded, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE5E5EA)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isExpanded ? 'Show Less' : 'See All Rooms',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1C1C1E),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                isExpanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: const Color(0xFF1C1C1E),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -184,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'RoomSeek',
+                          'Hello Tiger!',
                           style: TextStyle(
                             color: const Color(0xFF1C1C1E),
                             fontWeight: FontWeight.w800,

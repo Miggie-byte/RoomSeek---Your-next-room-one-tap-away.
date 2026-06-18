@@ -2,10 +2,10 @@ from openpyxl import load_workbook, workbook
 from openpyxl.utils import get_column_letter
 
 workbook = load_workbook('Room Schedule.xlsx')
-worksheet = workbook['3CSC']
+worksheet = workbook['1CSA']
 
 room_number = worksheet['A6'].value
-print("Room Number: "+room_number) # Print the value of cell A6
+print("Room Number: "+str(room_number)) # Print the value of cell A6
 
 #Looping through the cells and checking for vacancy
 for col in range(2,14,2):  

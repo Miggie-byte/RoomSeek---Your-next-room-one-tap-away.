@@ -14,7 +14,11 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return RoomAvailability.fromJson(jsonDecode(response.body));
+      final availability = RoomAvailability.fromJson(jsonDecode(response.body));
+      return RoomAvailability(
+        availableNow: availability.availableNow.map((r) => r.copyWith(day: day)).toList(),
+        availableSoon: availability.availableSoon.map((r) => r.copyWith(day: day)).toList(),
+      );
     } else {
       throw Exception('Failed to load rooms');
     }

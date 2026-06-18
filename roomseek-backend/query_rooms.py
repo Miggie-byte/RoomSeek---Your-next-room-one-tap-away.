@@ -30,7 +30,8 @@ def lambda_handler(event, context):
                 available_rooms.append({
                     'room': room_number,
                     'vacant_until': slot['end_time'],
-                    'vacant_for': f'{hours}h {minutes}m'
+                    'vacant_for': f'{hours}h {minutes}m',
+                    'schedule': vacant_slots
                 })
                 break
             else:
@@ -44,7 +45,8 @@ def lambda_handler(event, context):
                     upcoming_rooms.append({
                         'room': room_number,
                         'vacant_in': f'{hours}h {minutes}m',
-                        'at': slot['start_time']
+                        'at': slot['start_time'],
+                        'schedule': vacant_slots
                     })
                     break
 
@@ -56,7 +58,13 @@ def lambda_handler(event, context):
         },
         'body': json.dumps({
             'available_now': available_rooms,
-            'available_soon': upcoming_rooms
+            'available_soon': upcoming_rooms,
+            'all_rooms': [
+                {
+                    'room': room['room_number'],
+                    'schedule': room['vacant_slots'].get(day, [])
+                } for room in rooms
+            ]
         })
     }
 
